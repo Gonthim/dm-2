@@ -26,70 +26,84 @@ module TreeNode
     def add_subtree( tree )
         project_id = self.document_kind == 'Project' ?  self.id : self.project_id
         parent_type = self.document_kind == 'Project' ? 'Project' : 'DocumentFolder'
-        root_folder = self.add_child_folder( project_id, self.id, parent_type, tree['name'] )
-        # note this isn't recursive, parses manifest and 1..n sequences
-        tree['children'].each { |child|
-            if child['children']
-                child_folder = self.add_child_folder( project_id, root_folder.id, 'DocumentFolder', child['name'] )
-                child['children'].each { |grandchild|
-                    self.add_child_document( project_id, child_folder.id, 'DocumentFolder', grandchild )
-                }
-            else     
-                # if there's only one sequence, we don't create a sub folder    
-                self.add_child_document( project_id, root_folder.id, 'DocumentFolder', child )
+        inserted_docs = []
+        ActiveRecord::Base.transaction do
+            # build subtree recursively, extract list of documents to insert
+            root_folder, documents = add_child_folders(project_id, self.id, parent_type, tree)
+
+            # batch insert documents
+            if documents.any?
+                result = Document.insert_all!(documents, returning: %w[id content])
+                # prepare docs for thumbnail generation
+                inserted_docs = result.rows.map do |id, content_json|
+                    content = JSON.parse(content_json)
+                    [id, content['tileSources'].first]
+                end
             end
-        }
+
+            # batch renumber
+            root_folder.renumber_children
+        end
+        # use worker job to offload thumbnail generation after docs created
+        inserted_docs.each do |id, thumb_url|
+            GenerateThumbnailWorker.perform_async(id, thumb_url)
+        end
     end
 
-    def add_child_folder( project_id, parent_id, parent_type, name )
-        document_folder = DocumentFolder.new({
+    def add_child_folders(project_id, parent_id, parent_type, node)
+        folder = DocumentFolder.create!(
             project_id: project_id,
-            title: name,
+            title: node['name'],
             parent_id: parent_id,
             parent_type: parent_type
-        })
-        document_folder.save!
-        document_folder.move_to( :end, parent_id, parent_type )
-        document_folder
+        )
+
+        child_documents = []
+
+        (node['children'] || []).each do |child|
+            if child['children']
+                subfolder, subdocs = add_child_folders(project_id, folder.id, 'DocumentFolder', child)
+                child_documents.concat(subdocs)
+            else
+                child_documents << {
+                    project_id: project_id,
+                    parent_id: folder.id,
+                    parent_type: 'DocumentFolder',
+                    title: child['name'],
+                    document_kind: 'canvas',
+                    content: { tileSources: [child['image_info_uri']] },
+                    created_at: Time.current,
+                    updated_at: Time.current
+                }
+            end
+        end
+
+        [folder, child_documents]
     end
 
-    def add_child_document( project_id, parent_id, parent_type, document_json )
-        image_url = document_json['image_info_uri']
-        document = Document.new({
-            project_id: project_id,
-            parent_id: parent_id,
-            parent_type: parent_type,
-            title: document_json['name'],
-            document_kind: 'canvas',
-            content: {
-                tileSources: [ image_url ]
-            }
-        })
-        document.save!
-        begin
-            document.add_thumbnail( image_url + '/full/!160,160/0/default.png')            
-        rescue => exception
-            logger.error "Unable to generate thumb: #{exception}"
-        end
-        document.move_to( :end, parent_id, parent_type )
-        document
-    end
-  
     def contents_children
         (self.documents + self.document_folders).sort_by(&:position)
     end
 
     def renumber_children( children=nil )
-        children = contents_children if children.nil?
-        # renumber them in a single transaction
-        ActiveRecord::Base.transaction do    
-            i = 0
-            children.each { |child|
-                child.position = i
-                i = i + 1
-                child.save!
+        # renumber all children from 0 using existing order, in a single query
+        children ||= contents_children
+        updated_children = children.each_with_index.map do |child, i|
+            {
+                # keep track of class for Document vs DocumentFolder
+                klass: child.class,
+                attrs: child.attributes.merge(
+                    # update position and timestamps; keep other attrs
+                    "position" => i,
+                    "updated_at" => Time.current,
+                    "created_at" => child.created_at || Time.current
+                )
             }
-        end        
+        end
+        updated_children.group_by { |h| h[:klass] }.each do |klass, group|
+            # perform upsert_all per class (Document vs DocumentFolder)
+            klass.upsert_all(group.map { |h| h[:attrs] }, unique_by: [:id])
+        end
     end
 
     def list_positions

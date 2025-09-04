@@ -90,7 +90,17 @@ class DocumentFoldersController < ApplicationController
   private
     # Use callbacks to share common setup or constraints between actions.
     def set_document_folder
-      @document_folder = DocumentFolder.find(params[:id])
+      @document_folder = DocumentFolder.includes(
+        :documents,
+        :document_folders,
+        documents: [
+          :highlights,
+          :documents_links,
+          :locked_by,
+          { images_attachments: :blob, thumbnail_attachment: :blob }
+        ]
+      )
+      .find(params[:id])
       @project = @document_folder.project
     end
 
