@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM ruby:3.3 AS dm2-dev
+FROM ruby:3.3.2 AS dm2-dev
 
 # Install node.js and yarn
 RUN apt-get update -qq && apt-get install -y curl sudo

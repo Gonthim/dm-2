@@ -176,29 +176,29 @@ Edit `.env` as necessary. The sample values are all standard for a development e
 
 Then, use Docker Compose to build the necessary Docker images:
 ```sh
-docker-compose build
+docker compose build
 ```
 
 Run any pending database migrations:
 ```sh
-docker-compose run --rm app rails db:migrate
+docker compose run --rm app rails db:migrate
 ```
 
 And finally, boot the application:
 ```sh
-docker-compose up
+docker compose up
 ```
 
 If you wish to mount the code directory from your local filesystem onto the Docker container in order to develop on it, store local uploads, and use hot-reloading features, you can use the following command:
 ```sh
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
 After boot completes, the app should be up and running on `localhost:3000`.
 
 You may stop the application at any time by opening another shell in the same `dm-2` directory and running:
 ```sh
-docker-compose down
+docker compose down
 ```
 
 #### Production environment
@@ -227,29 +227,29 @@ It may also be necessary to configure Amazon S3 for Active Storage to function i
 
 Then, use Docker Compose to build the necessary Docker images:
 ```sh
-docker-compose build
+docker compose build
 ```
 
 Run any pending database migrations using the `docker-compose.prod.yml` overrides:
 ```sh
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml run --rm app rails db:migrate
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm app rails db:migrate
 ```
 
 And finally, boot the application in detached mode using the same overrides:
 ```sh
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 During boot, you may wish to view logs for the application:
 ```sh
-docker-compose logs -f -t
+docker compose logs -f -t
 ```
 
 After boot completes, the app should be up and running on `localhost:443` (see above note about HTTPS and production).
 
 You may stop the application at any time by opening another shell in the same `dm-2` directory and running:
 ```sh
-docker-compose down
+docker compose down
 ```
 
 ### With Heroku local development environment
@@ -264,7 +264,6 @@ docker-compose down
 - Redis 6+
 
 #### Setup
-
 DM3 is a Ruby on Rails 5.x/React application. Setting up PostgresSQL, Ruby, Bundler, Node.JS, Redis, and Yarn are beyond the scope of this README, but plenty of information is available online about these tools.
 
 Ensure that both PostgreSQL and Redis services are running.
